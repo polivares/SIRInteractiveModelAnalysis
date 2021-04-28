@@ -1,0 +1,136 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import scipy.integrate as spi
+from scipy.optimize import curve_fit
+import numpy as np
+import matplotlib 
+import argparse
+from sklearn.model_selection import RandomizedSearchCV
+import scipy.stats as ss
+import pickle as pkl 
+import os 
+# Evaluation time
+from datetime import datetime # Library for datetime format
+from dateutil import relativedelta # Library to calculate delta time from date
+
+plt.rc('text', usetex=True)
+
+def getPop(dataDir,filePop):
+    ausPop = pd.read_pickle(dataDir + filePop)
+    return ausPop
+
+def getfluSeries(dataDir, fileData):
+    # Load data
+    fluSeries = pd.read_pickle(dataDir + fileData)
+    return fluSeries
+
+# Defining SIR isolated equations
+def SIR_eqs(SIR0, t, beta, gamma):
+    S0=SIR0[0]
+    I0=SIR0[1]
+    R0=SIR0[2]
+
+    S = - beta * S0 * I0/ausPop[year]
+    I = (beta * S0 * I0/ausPop[year]) - gamma * I0
+    R = gamma * I0
+
+    return (S,I,R)
+
+# Fitting function from infected data and I state on SIR model
+def fitSIR(t, beta, gamma):
+    return spi.odeint(SIR_eqs,SIR0,t_range,args=(beta,gamma))[:,1] 
+
+def fitErrorSIR(trial, fluSeries, t_range):
+    beta = trial.suggest_float("beta",1,150,step=0.0001)
+    gamma = trial.suggest_float("gamma",1,150,step=0.0001)
+    SIR_Res = fitSIR(t_range, beta, gamma)
+    
+    def normMSE(data,model):
+        n = len(data)
+        mse = ((data-model)**2).sum()
+        nmse = mse/(n*(data.sum()/n)*(model.sum()/n))
+        
+        return nmse
+
+    return normMSE(fluSeries[startdate:enddate], SIR_Res)
+
+def fluSIRSim(beta,gamma, t_eval):    
+    return spi.odeint(SIR_eqs, SIR0, t_eval, args=(beta, gamma))
+
+if __name__ == '__main__':
+    # Extract arguments from the command line.
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-p", "--path", required = True, help = "Input path")
+    ap.add_argument("-f", "--file", required = True, help = "File input name with infection data")
+    ap.add_argument("-pop", "--population", required = True, help = "File input name with population data")
+    ap.add_argument("-i", "--image-path", required = True, help = "Image path")
+    ap.add_argument("-n", "--n-trials", required = True, help = "Number of trials")
+    args = vars(ap.parse_args())
+    dataDir = args["path"]
+    filePop = args["population"]
+    fileData = args["file"]
+    image_path = args["image_path"]
+    n_trials = int(args["n_trials"])
+
+    # Get Influenza parameters
+    fluParams = {}
+    ausPop = getPop(dataDir, filePop)
+    for year in ausPop.keys():
+        try:
+            print(year)
+            startdate = str(year) + '-01'
+            enddate = str(year) + '-12'
+            date_format = "%Y-%m"
+            sd = datetime.strptime(startdate, date_format)
+            ed = datetime.strptime(enddate, date_format)
+            fluSeries = getfluSeries(dataDir, fileData)
+            ausPop = getPop(dataDir, filePop)
+            # Number of months (delta time)
+            n_months = relativedelta.relativedelta(ed, sd)
+            # Timestamp parameters
+            t_start = 0.0; t_end = n_months.months; t_inc = 1
+            t_range = np.arange(t_start, t_end+t_inc, t_inc)
+            # Initial conditionss
+            S0 = (ausPop[year] - fluSeries[startdate])
+            I0 = (fluSeries[startdate])
+            R0 = 0
+            SIR0 = [S0,I0,R0]
+            
+            param_dist = {'beta': ss.uniform(0.1,1000),
+              'gamma': ss.uniform(0.1,1000)
+            }
+
+            random_search = RandomizedSearchCV( lambda beta, gamma: 
+                            fitSIR(t_series, beta, gamma), param_distributions=param_dist,
+                                   n_iter=3000, cv=2)
+
+            random_search.fit(t_range, fluSeries[startdate:enddate])
+            # Timestamp parameters
+            t_start = 0.0; t_end = n_months.months; t_inc = 0.01
+            t_eval = np.arange(t_start, t_end+t_inc, t_inc)
+            # Initial conditions
+            S0 = (ausPop[year] - fluSeries[startdate])
+            I0 = (fluSeries[startdate])
+            R0 = 0
+            SIR0 = [S0,I0,R0]
+
+            SIR = fluSIRSim(beta, gamma, t_eval)
+            S = SIR[:,0]
+            I = SIR[:,1]
+            R = SIR[:,2]
+            plt.plot(t_range[:n_months.months+1], fluSeries[startdate:enddate].values,
+                    'ok',label="Original data")
+            plt.plot(t_eval, I,'-r',label="Infected fit")
+            plt.text(15, 60, r'$\gamma = $' + str(gamma))
+            plt.text(15, 64, r'$\beta = $' + str(beta))
+            plt.title("Year: " + str(year))
+            plt.savefig(image_path + "flu_" + str(year) + ".png" )
+            plt.clf()
+        except KeyError:
+            print("Year " + str(year) + " is not found")
+    pkl.dump(fluParams, open(dataDir + '/fluSIRParams.pkl','wb'))
+    
+
+
+
+
