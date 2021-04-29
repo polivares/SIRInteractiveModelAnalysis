@@ -42,8 +42,8 @@ def fitSIR(t, beta, gamma):
     return spi.odeint(SIR_eqs,SIR0,t_range,args=(beta, gamma))[:,1] 
 
 def fitErrorSIR(trial, menSeries, t_range):
-    beta = trial.suggest_float("beta",1,150,step=0.0001)
-    gamma = trial.suggest_float("gamma",1,150,step=0.0001)
+    beta = trial.suggest_float("beta",1,150,step=0.1)
+    gamma = trial.suggest_float("gamma",1,150,step=0.1)
     SIR_Res = fitSIR(t_range, beta, gamma).reshape(-1, 1)
 
     scaler = StandardScaler()
@@ -52,7 +52,7 @@ def fitErrorSIR(trial, menSeries, t_range):
     mSeries_norm = scaler.fit_transform(mSeries).flatten()
     SIR_Res_norm = scaler.transform(SIR_Res).flatten()
 
-    return mean_squared_error(mSeries, SIR_Res_norm)
+    return mean_squared_error(mSeries_norm, SIR_Res_norm)
 
 def menSIRSim(beta,gamma, t_eval):    
     return spi.odeint(SIR_eqs, SIR0, t_eval, args=(beta, gamma))

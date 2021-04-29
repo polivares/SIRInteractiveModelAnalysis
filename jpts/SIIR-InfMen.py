@@ -16,7 +16,7 @@ from sklearn.preprocessing import StandardScaler # Standarizer for normalization
 
 plt.rc('text', usetex=True)
 
-def getPop(dataDir,filePop):
+def getPop(dataDir, filePop):
     ausPop = pd.read_pickle(dataDir + filePop)
     return ausPop
 
@@ -24,6 +24,11 @@ def getSeries(dataDir, fileData):
     # Load data
     series = pd.read_pickle(dataDir + fileData)
     return series
+
+def getParams(dataDir, fileData):
+    # Load data
+    params = pd.read_pickle(dataDir + fileData)
+    return params
 
 # Defining SIIR interactive equations
 def SIIR_eqs(SIIR0,t,beta1,beta2, gamma1, gamma2, beta1int, beta2int, gamma1int, gamma2int):
@@ -54,16 +59,14 @@ def fitSIIR(t, beta1,beta2, gamma1, gamma2, beta1int, beta2int, gamma1int, gamma
     return I1, I2
 
 def fitErrorSIIR(trial, fluSeries, menSeries, t_range):
-    max_value = 150
-    beta1 = trial.suggest_float("beta1",5,max_value,step=0.0001)
-    beta2 = trial.suggest_float("beta2",5,max_value,step=0.0001)
-    gamma1 = trial.suggest_float("gamma1",5,max_value,step=0.0001)
-    gamma2 = trial.suggest_float("gamma2",5,max_value,step=0.0001)
-    beta1int = trial.suggest_float("beta1int",5,max_value,step=0.0001)
-    beta2int = trial.suggest_float("beta2int",5,max_value,step=0.0001)
-    gamma1int = trial.suggest_float("gamma1int",5,max_value,step=0.0001)
-    gamma2int = trial.suggest_float("gamma2int",5,max_value,step=0.0001)
-    params = beta1,beta2, gamma1, gamma2, beta1int, beta2int, gamma1int, gamma2int
+    beta1 = trial.suggest_float("beta1", betaFlu0/10, betaFlu0*10, log=True)
+    beta2 = trial.suggest_float("beta2", betaMen0/10, betaMen0*10, log=True)
+    gamma1 = trial.suggest_float("gamma1", gammaFlu0/10, gammaFlu0*10, log=True)
+    gamma2 = trial.suggest_float("gamma2", gammaMen0/10, gammaMen0*10, log=True)
+    beta1int = trial.suggest_float("beta1int",betaFlu0/10,betaFlu0*10, log=True)
+    beta2int = trial.suggest_float("beta2int", betaMen0/10, betaMen0*10, log=True)
+    gamma1int = trial.suggest_float("gamma1int", gammaFlu0/10, gammaFlu0*10, log=True)
+    gamma2int = trial.suggest_float("gamma2int", gammaMen0/10, gammaMen0*10, log=True)
 
     I1,I2 = fitSIIR(t_range, beta1,beta2, gamma1, gamma2, 
                     beta1int, beta2int, gamma1int, gamma2int)
@@ -97,7 +100,9 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument("-p", "--path", required = True, help = "Input path")
     ap.add_argument("-fi", "--file-influenza", required = True, help = "File input name with infection data for Influenza")
+    ap.add_argument("-fpi", "--file-params-influenza", required = True, help = "File input name parameters for Influenza (isolated)")
     ap.add_argument("-fm", "--file-meningococcal", required = True, help = "File input name with infection data for Meningococcal")
+    ap.add_argument("-fpm", "--file-params-meningococcal", required = True, help = "File input name parameters for Meningoccocal (isolated)")
     ap.add_argument("-pop", "--population", required = True, help = "File input name with population data")
     ap.add_argument("-i", "--image-path", required = True, help = "Image path")
     ap.add_argument("-n", "--n-trials", required = True, help = "Number of trials")
@@ -105,7 +110,9 @@ if __name__ == '__main__':
     dataDir = args["path"]
     filePop = args["population"]
     fileInf = args["file_influenza"]
+    fileFluParams = args["file_params_influenza"]
     fileMen = args["file_meningococcal"]
+    fileMenParams = args["file_params_meningococcal"]
     image_path = args["image_path"]
     n_trials = int(args["n_trials"])
 
@@ -123,6 +130,9 @@ if __name__ == '__main__':
             # Get data from each disease
             fluSeries = getSeries(dataDir, fileInf)
             menSeries = getSeries(dataDir, fileMen)
+            # Get parameters from isolated case
+            fluParams = getParams(dataDir, fileFluParams)
+            menParams = getParams(dataDir, fileMenParams)
             # Number of months (delta time)
             n_months = relativedelta.relativedelta(ed, sd)
             # Timestamp parameters
@@ -135,6 +145,14 @@ if __name__ == '__main__':
             SIIR0[1] = (fluSeries[startdate])
             SIIR0[2] = (menSeries[startdate])
             SIIR0[0] = ausPop[year] - np.sum(SIIR0[1:8])
+
+            betaFlu0 = fluParams[year][0]
+            gammaFlu0 = fluParams[year][1]
+            scoreFlu0 = fluParams[year][2]
+            betaMen0 = menParams[year][0]
+            gammaMen0 = menParams[year][1]
+            scoreMen0 = menParams[year][2]
+
             study = optuna.create_study()
             # Optimization process
             study.optimize( lambda trial: 
