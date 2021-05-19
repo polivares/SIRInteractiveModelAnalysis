@@ -59,14 +59,16 @@ def fitSIIR(t, beta1,beta2, gamma1, gamma2, beta1int, beta2int, gamma1int, gamma
     return I1, I2
 
 def fitErrorSIIR(trial, fluSeries, menSeries, t_range):
-    beta1 = trial.suggest_float("beta1", betaFlu0/10, betaFlu0*10, log=True)
-    beta2 = trial.suggest_float("beta2", betaMen0/10, betaMen0*10, log=True)
-    gamma1 = trial.suggest_float("gamma1", gammaFlu0/10, gammaFlu0*10, log=True)
-    gamma2 = trial.suggest_float("gamma2", gammaMen0/10, gammaMen0*10, log=True)
-    beta1int = trial.suggest_float("beta1int",betaFlu0/10,betaFlu0*10, log=True)
-    beta2int = trial.suggest_float("beta2int", betaMen0/10, betaMen0*10, log=True)
-    gamma1int = trial.suggest_float("gamma1int", gammaFlu0/10, gammaFlu0*10, log=True)
-    gamma2int = trial.suggest_float("gamma2int", gammaMen0/10, gammaMen0*10, log=True)
+    k1 = 5
+    k2 = 100
+    beta1 = trial.suggest_float("beta1", betaFlu0/k1, betaFlu0*k1, log=True)
+    beta2 = trial.suggest_float("beta2", betaMen0/k1, betaMen0*k1, log=True)
+    gamma1 = trial.suggest_float("gamma1", gammaFlu0/k1, gammaFlu0*k1, log=True)
+    gamma2 = trial.suggest_float("gamma2", gammaMen0/k1, gammaMen0*k1, log=True)
+    beta1int = trial.suggest_float("beta1int",betaFlu0/k2,betaFlu0*k2, log=True)
+    beta2int = trial.suggest_float("beta2int", betaMen0/k2, betaMen0*k2, log=True)
+    gamma1int = trial.suggest_float("gamma1int", gammaFlu0/k2, gammaFlu0*k2, log=True)
+    gamma2int = trial.suggest_float("gamma2int", gammaMen0/k2, gammaMen0*k2, log=True)
 
     I1,I2 = fitSIIR(t_range, beta1,beta2, gamma1, gamma2, 
                     beta1int, beta2int, gamma1int, gamma2int)
