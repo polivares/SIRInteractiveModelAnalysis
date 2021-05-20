@@ -13,8 +13,13 @@ from datetime import datetime # Library for datetime format
 from dateutil import relativedelta # Library to calculate delta time from date
 from sklearn.metrics import mean_squared_error # Score error
 from sklearn.preprocessing import StandardScaler # Standarizer for normalization
+# Multiprocessing
+from joblib import parallel_backend
+
 
 plt.rc('text', usetex=True)
+
+SIIR0 = np.zeros(9)
 
 def getPop(dataDir, filePop):
     ausPop = pd.read_pickle(dataDir + filePop)
@@ -58,17 +63,25 @@ def fitSIIR(t, beta1,beta2, gamma1, gamma2, beta1int, beta2int, gamma1int, gamma
     I2 = sir_res[:,2] + sir_res[:,3] + sir_res[:,6]
     return I1, I2
 
-def fitErrorSIIR(trial, fluSeries, menSeries, t_range):
-    k1 = 5
-    k2 = 100
-    beta1 = trial.suggest_float("beta1", betaFlu0/k1, betaFlu0*k1, log=True)
-    beta2 = trial.suggest_float("beta2", betaMen0/k1, betaMen0*k1, log=True)
-    gamma1 = trial.suggest_float("gamma1", gammaFlu0/k1, gammaFlu0*k1, log=True)
-    gamma2 = trial.suggest_float("gamma2", gammaMen0/k1, gammaMen0*k1, log=True)
-    beta1int = trial.suggest_float("beta1int",betaFlu0/k2,betaFlu0*k2, log=True)
-    beta2int = trial.suggest_float("beta2int", betaMen0/k2, betaMen0*k2, log=True)
-    gamma1int = trial.suggest_float("gamma1int", gammaFlu0/k2, gammaFlu0*k2, log=True)
-    gamma2int = trial.suggest_float("gamma2int", gammaMen0/k2, gammaMen0*k2, log=True)
+
+
+def fitErrorSIIR_I1(trial, fluSeries, menSeries, t_range):
+    SIIR0[1] = (fluSeries[startdate])
+    SIIR0[2] = (menSeries[startdate])
+    SIIR0[0] = ausPop[year] - np.sum(SIIR0[1:8])
+    k1 = 10
+    k2 = 20
+
+    beta2 = betaMen0
+    gamma2 = gammaMen0
+    beta2int = betaMen0
+    gamma2int = gammaMen0
+
+    log_n = True
+    beta1 = trial.suggest_float("beta1", betaFlu0/3, betaFlu0*3, log=log_n)
+    gamma1 = trial.suggest_float("gamma1", gammaFlu0/3, gammaFlu0*3, log=log_n)
+    beta1int = trial.suggest_float("beta1int",betaFlu0/k1,betaFlu0*k2, log=log_n)
+    gamma1int = trial.suggest_float("gamma1int", gammaFlu0/k1, gammaFlu0*k2, log=log_n)
 
     I1,I2 = fitSIIR(t_range, beta1,beta2, gamma1, gamma2, 
                     beta1int, beta2int, gamma1int, gamma2int)
@@ -86,9 +99,45 @@ def fitErrorSIIR(trial, fluSeries, menSeries, t_range):
     mSeries_norm = sc_Men.fit_transform(mSeries).flatten()
     I2_norm = sc_Men.transform(I2).flatten()
     
-    error = [mean_squared_error(fSeries_norm,I1_norm),
-             mean_squared_error(mSeries_norm,I2_norm)]
-    return np.sum(error)
+    error = mean_squared_error(fSeries_norm,I1_norm)
+    return error
+
+def fitErrorSIIR_I2(trial, fluSeries, menSeries, t_range):
+    SIIR0[1] = (fluSeries[startdate])
+    SIIR0[2] = (menSeries[startdate])
+    SIIR0[0] = ausPop[year] - np.sum(SIIR0[1:8])
+    k1 = 10
+    k2 = 10
+
+    beta1 = betaFlu0
+    gamma1 = gammaFlu0
+    beta1int = betaFlu0
+    gamma1int = gammaFlu0
+
+    log_n = True
+    beta2 = trial.suggest_float("beta2", betaMen0/k1, betaMen0*k2, log=log_n)
+    gamma2 = trial.suggest_float("gamma2", gammaMen0/k1, gammaMen0*k2, log=log_n)
+    beta2int = trial.suggest_float("beta2int",betaMen0/k1,betaMen0*k2, log=log_n)
+    gamma2int = trial.suggest_float("gamma2int", gammaMen0/k1, gammaMen0*k2, log=log_n)
+
+    I1,I2 = fitSIIR(t_range, beta1,beta2, gamma1, gamma2, 
+                    beta1int, beta2int, gamma1int, gamma2int)
+
+    sc_Inf = StandardScaler()
+    sc_Men = StandardScaler()
+
+    fSeries = np.array(fluSeries[startdate:enddate]).reshape(-1, 1)
+    mSeries = np.array(menSeries[startdate:enddate]).reshape(-1, 1)
+    I1 = I1.reshape(-1,1)
+    I2 = I2.reshape(-1,1)
+
+    fSeries_norm = sc_Inf.fit_transform(fSeries).flatten()
+    I1_norm = sc_Inf.transform(I1).flatten()
+    mSeries_norm = sc_Men.fit_transform(mSeries).flatten()
+    I2_norm = sc_Men.transform(I2).flatten()
+    
+    error = mean_squared_error(mSeries_norm,I2_norm)
+    return error
 
 def menfluSIIRSim(beta1,beta2,gamma1, gamma2, beta1int, 
                   beta2int, gamma1int, gamma2int):    
@@ -155,16 +204,28 @@ if __name__ == '__main__':
             gammaMen0 = menParams[year][1]
             scoreMen0 = menParams[year][2]
 
-            study = optuna.create_study()
+            study1 = optuna.create_study()
+            study2 = optuna.create_study()
             # Optimization process
-            study.optimize( lambda trial: 
-                            fitErrorSIIR(trial, fluSeries, menSeries, t_range),
+            #with parallel_backend('multiprocessing'):
+            study1.optimize( lambda trial: 
+                            fitErrorSIIR_I1(trial, fluSeries, menSeries, t_range),
                             n_trials = n_trials)
-            print(study.best_params)  # E.g. {'x': 2.002108042})
-            beta1,beta2, gamma1, gamma2, beta1int, beta2int, gamma1int, gamma2int = study.best_params.values()
+                            
+
+            study2.optimize( lambda trial: 
+                            fitErrorSIIR_I2(trial, fluSeries, menSeries, t_range),
+                            n_trials = n_trials)
+
+            print(study1.best_params)  # E.g. {'x': 2.002108042})
+            beta1, gamma1, beta1int, gamma1int = study1.best_params.values()
+
+            print(study2.best_params)  # E.g. {'x': 2.002108042})
+            beta2, gamma2, beta2int, gamma2int = study2.best_params.values()
+
             fluMenParams[year] = [beta1,beta2, gamma1, gamma2,
                                   beta1int, beta2int, gamma1int,
-                                  gamma2int, study.best_trial.value]
+                                  gamma2int, (study1.best_trial.value, study2.best_trial.value)]
             # Timestamp parameters
             t_start = 0.0; t_end = n_months.months; t_inc = 0.01
             t_eval = np.arange(t_start, t_end+t_inc, t_inc)
